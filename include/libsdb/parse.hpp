@@ -13,10 +13,11 @@ namespace sdb {
     template <class I>
     std::optional<I> to_integral(std::string_view sv, int base = 10){
         auto begin = sv.begin();
-        if(base == 16 and sv.size() > 1 and
-            begin[0] = '0' and begin[1] == 'x'){
-                begin += 2;
-            }
+    // Handle hexadecimal number (0x or 0X prefix)
+    if (base == 16 && sv.size() > 1 && begin[0] == '0' && (begin[1] == 'x' || begin[1] == 'X')) {
+        begin += 2; // Skip "0x" or "0X"
+    }
+
         I ret;
         auto result = std::from_chars(begin, sv.end(), ret, base);
 

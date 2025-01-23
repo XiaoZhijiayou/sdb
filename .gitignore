@@ -669,3 +669,14 @@ build/vcpkg_installed/x64-linux/share/vcpkg-cmake-config/vcpkg_cmake_config_fixu
 build/vcpkg_installed/x64-linux/share/vcpkg-cmake-config/vcpkg-port-config.cmake
 build/vcpkg_installed/x64-linux/share/vcpkg-cmake-config/vcpkg.spdx.json
 .vscode/settings.json
+build/.cmake/api/v1/reply/cache-v2-f5623679d91c991592ca.json
+build/.cmake/api/v1/reply/index-2025-01-23T06-15-49-0369.json
+build/Testing/20250123-0247/Test.xml
+build/Testing/Temporary/LastTest_20250123-0247.log
+build/src/CMakeFiles/libsdb.dir/compiler_depend.internal
+build/test/CMakeFiles/tests.dir/compiler_depend.internal
+build/test/targets/CMakeFiles/end_immediately.dir/compiler_depend.internal
+build/test/targets/CMakeFiles/reg_read.dir/depend.internal
+build/test/targets/CMakeFiles/reg_write.dir/depend.internal
+build/test/targets/CMakeFiles/run_endlessly.dir/compiler_depend.internal
+build/tools/CMakeFiles/sdb.dir/compiler_depend.internal

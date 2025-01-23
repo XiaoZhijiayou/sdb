@@ -53,7 +53,7 @@ namespace sdb{
             }
         private:
             std::uint64_t addr_ = 0;
-    }
+    };
 
 }
 

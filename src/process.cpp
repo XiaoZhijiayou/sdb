@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <libsdb/error.hpp>
 #include <libsdb/pipe.hpp>
+#include <iostream>
 
 namespace {
     // 将一个带有给定消息前缀的 errno 表示写入管道中
@@ -167,7 +168,8 @@ void sdb::process::read_all_registers(){
 }
 
 void sdb::process::write_user_area(std::size_t offset, std::uint64_t data){
-    if(ptrace(PTRACE_POKEDATA, pid_, offset, data) < 0){
+    if(ptrace(PTRACE_POKEUSER, pid_, offset, data) < 0){
+        perror("ptrace failed");
         error::send_errno("Could not write to user area");
     }
 }
