@@ -35,6 +35,14 @@ sdb::process::launch(std::filesystem::path path){
 这个代码对于错误的调试文件名来说会出错：因为这里对于execlp情况下，只在子进程中进行了报错，没有在父进程中进行报错处理
 解决思路：加入管道机制
 
-遗留问题：测试中三个例子是错误的！！！！！！
+
+遗留问题：第六章中的ptrace部分写入data到寄存器中的时候一直出错 < 0
+```
+    sdb> c 
+    Process 8580 stopped with signal TRAP at 0x6452e97bc146
+    sdb> reg write ah 0x42
+    ptrace failed: Input/output error
+    Could not write to user area: Input/output error
+```
 
 
