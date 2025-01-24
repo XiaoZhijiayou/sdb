@@ -2,45 +2,41 @@
 #define SDB_REGISTERS_HPP
 
 #include <sys/user.h>
+#include <libsdb/register_info.hpp>
 #include <variant>
 #include <libsdb/types.hpp>
-#include <libsdb/register_info.hpp>
 
-namespace sdb{
+namespace sdb {
     class process;
-    /**
-     * 表示给定进程中寄存器的状态
-     */
-    class registers{
-        public:
-            registers() = delete;
-            registers(const registers&) = delete;
-            registers& operator=(const registers&) = delete; 
+    class registers {
+    public:
+        registers() = delete;
+        registers(const registers&) = delete;
+        registers& operator=(const registers&) = delete;
 
-            using value = std::variant<
+        using value = std::variant<
                 std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t,
                 std::int8_t, std::int16_t, std::int32_t, std::int64_t,
                 float, double, long double,
                 byte64, byte128>;
-            
-            value read(const register_info& info) const;
-            void write(const register_info& info, value val);
+                
+        value read(const register_info& info) const;
+        void write(const register_info& info, value val);
 
-            template<class T>
-            T read_by_id_as(register_id id) const {
-                return std::get<T>(read(register_info_by_id(id)));
-            }
+        template <class T>
+        T read_by_id_as(register_id id) const {
+            return std::get<T>(read(register_info_by_id(id)));
+        }
+        void write_by_id(register_id id, value val) {
+            write(register_info_by_id(id), val);
+        }
 
-            void write_by_id(register_id id, value val){
-                write(register_info_by_id(id), val);
-            }
+    private:
+        friend process;
+        registers(process& proc) : proc_(&proc) {}
 
-
-        private:
-            friend process;
-            registers(process& proc) :proc_(&proc) {}
-            user data_;
-            process* proc_;
+        user data_;
+        process* proc_;
     };
 }
 

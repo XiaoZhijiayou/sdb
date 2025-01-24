@@ -3,21 +3,22 @@
 
 #include <cstring>
 #include <libsdb/types.hpp>
-#include <string_view>
 #include <vector>
+#include <string_view>
 
-namespace sdb{
-    template<class To>
-    To from_bytes(const std::byte* bytes){
+namespace sdb {
+    template <class To>
+    To from_bytes(const std::byte* bytes) {
         To ret;
         std::memcpy(&ret, bytes, sizeof(To));
         return ret;
     }
 
-    template<class From>
-    std::byte* as_bytes(From& from){
+    template <class From>
+    std::byte* as_bytes(From& from) {
         return reinterpret_cast<std::byte*>(&from);
     }
+
     template <class From>
     const std::byte* as_bytes(const From& from) {
         return reinterpret_cast<const std::byte*>(&from);
@@ -25,7 +26,7 @@ namespace sdb{
 
     template <class From>
     byte128 to_byte128(From src) {
-        byte128 ret {};
+        byte128 ret{};
         std::memcpy(&ret, &src, sizeof(From));
         return ret;
     }
@@ -38,7 +39,7 @@ namespace sdb{
     }
 
     inline std::string_view to_string_view(
-    const std::byte* data, std::size_t size) {
+        const std::byte* data, std::size_t size) {
         return { reinterpret_cast<const char*>(data), size };
     }
 

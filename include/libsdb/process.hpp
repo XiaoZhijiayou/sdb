@@ -3,13 +3,11 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <sys/types.h>
 #include <libsdb/registers.hpp>
-#include <optional>
-#include <libsdb/types.hpp>
 
-namespace sdb{
-
+namespace sdb {
     enum class process_state {
         stopped,
         running,
@@ -18,9 +16,6 @@ namespace sdb{
     };
 
     struct stop_reason {
-        /**
-         * 它解析了 wait_status，并根据进程的退出或暂停状态
-         */
         stop_reason(int wait_status);
 
         process_state reason;
@@ -28,69 +23,52 @@ namespace sdb{
     };
 
     class process {
-        public:
-            ~process();
-            // 接收需要启动的程序的路径
-            static std::unique_ptr<process> launch(std::filesystem::path path 
-                    , bool debug = true
-                    , std::optional<int> stdout_replacement = std::nullopt);
-            // 接收要附加到的现有进程的PID
-            static std::unique_ptr<process> attach(pid_t pid);
+    public:
+        ~process();
+        static std::unique_ptr<process> launch(std::filesystem::path path,
+            bool debug = true,
+            std::optional<int> stdout_replacement = std::nullopt);
+        static std::unique_ptr<process> attach(pid_t pid);
 
-            /**
-             * 继续进行调试、追踪
-             */
-            void resume();
+        void resume();
+        stop_reason wait_on_signal();
 
-            /**
-             * 
-             */
-            stop_reason wait_on_signal();
+        process() = delete;
+        process(const process&) = delete;
+        process& operator=(const process&) = delete;
 
-            pid_t pid() const {return pid_;}
+        process_state state() const { return state_; }
+        pid_t pid() const { return pid_; }
 
-            process() = delete;
-            process(const process&) = delete;
-            process& operator=(const process&) = delete;
+        registers& get_registers() { return *registers_; }
+        const registers& get_registers() const { return *registers_; }
 
-            process_state state() const { return state_; }
+        void write_user_area(std::size_t offset, std::uint64_t data);
 
-            registers& get_registers() {return *registers_;}
+        void write_fprs(const user_fpregs_struct& fprs);
+        void write_gprs(const user_regs_struct& gprs);
 
-            const registers& get_registers() const {return *registers_;}
+        virt_addr get_pc() const {
+            return virt_addr{
+                get_registers().read_by_id_as<std::uint64_t>(register_id::rip)
+            };
+        }
 
-            void write_user_area(std::size_t offset, std::uint64_t data);
+    private:
+        process(pid_t pid, bool terminate_on_end, bool is_attached)
+            : pid_(pid), terminate_on_end_(terminate_on_end),
+            is_attached_(is_attached), registers_(new registers(*this))
+        {}
 
-            void write_fprs(const user_fpregs_struct& fprs);
-            void write_gprs(const user_regs_struct& gprs);
+        void read_all_registers();
 
-            virt_addr get_pc() const {
-                return virt_addr{
-                    get_registers().read_by_id_as<std::uint64_t>(register_id::rip)
-                };
-            }
 
-        private:
-            process(pid_t pid, bool terminate_on_end ,bool is_attached)
-                : pid_(pid), 
-                terminate_on_end_(terminate_on_end),
-                is_attached_(is_attached),
-                registers_(new registers(*this)){}
-
-            void read_all_registers();
-
-            pid_t pid_ = 0;
-
-            //该变量决定了在进程结束时，是否自动终止调试器本身或销毁 process 对象
-            bool terminate_on_end_ = true;
-
-            process_state state_ = process_state::stopped;
-            
-            bool is_attached_ = true;
-            std::unique_ptr<registers> registers_; 
+        pid_t pid_ = 0;
+        bool terminate_on_end_ = true;
+        process_state state_ = process_state::stopped;
+        bool is_attached_ = true;
+        std::unique_ptr<registers> registers_;
     };
-
 }
-
 
 #endif
