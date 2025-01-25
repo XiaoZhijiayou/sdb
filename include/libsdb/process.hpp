@@ -6,6 +6,9 @@
 #include <optional>
 #include <sys/types.h>
 #include <libsdb/registers.hpp>
+#include <vector>
+#include <libsdb/breakpoint_site.hpp>
+#include <libsdb/stoppoint_collection.hpp>
 
 namespace sdb {
     enum class process_state {
@@ -42,16 +45,31 @@ namespace sdb {
 
         registers& get_registers() { return *registers_; }
         const registers& get_registers() const { return *registers_; }
-
+        //将数据写入用户区域的指定偏移位置
         void write_user_area(std::size_t offset, std::uint64_t data);
-
+        //将浮点寄存器结构体的数据写入用户区域
         void write_fprs(const user_fpregs_struct& fprs);
+        //将通用寄存器结构体的数据写入用户区域
         void write_gprs(const user_regs_struct& gprs);
+
+        breakpoint_site& create_breakpoint_site(virt_addr address);
+
+        stoppoint_collection<breakpoint_site>&
+        breakpoint_sites() { return breakpoint_sites_;}
+        
+        const stoppoint_collection<breakpoint_site>&
+        breakpoint_sites()  const { return breakpoint_sites_;}
 
         virt_addr get_pc() const {
             return virt_addr{
                 get_registers().read_by_id_as<std::uint64_t>(register_id::rip)
             };
+        }
+        //实现单步执行的策略
+        sdb::stop_reason step_instruction();
+
+        void set_pc(virt_addr address) {
+            get_registers().write_by_id(register_id::rip, address.addr());
         }
 
     private:
@@ -68,6 +86,8 @@ namespace sdb {
         process_state state_ = process_state::stopped;
         bool is_attached_ = true;
         std::unique_ptr<registers> registers_;
+
+        stoppoint_collection<breakpoint_site> breakpoint_sites_;
     };
 }
 

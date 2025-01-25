@@ -56,9 +56,11 @@ sdb::registers::value sdb::registers::read(const register_info& info) const {
 
 
 void sdb::registers::write(const register_info& info, value val) {
+    // 将 data_ 转换为字节数组，以便进行字节级别的操作。
     auto bytes = as_bytes(data_);
 
     std::visit([&](auto& v) {
+        // 检查 val 的大小是否小于或等于寄存器的大小。
         if (sizeof(v) <= info.size) {
             auto wide = widen(info, v);
             auto val_bytes = as_bytes(wide);
@@ -75,6 +77,7 @@ void sdb::registers::write(const register_info& info, value val) {
         proc_->write_fprs(data_.i387);
     }
     else {
+        //对偏移量进行对齐处理
         auto aligned_offset = info.offset & ~0b111;
         proc_->write_user_area(aligned_offset,
             from_bytes<std::uint64_t>(bytes + aligned_offset));

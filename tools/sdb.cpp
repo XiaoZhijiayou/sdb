@@ -14,8 +14,105 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <libsdb/parse.hpp>
+#include <libsdb/breakpoint_site.hpp>
+#include <libsdb/stoppoint_collection.hpp>
 
 namespace {
+    // 检查str是不是of的字串
+    bool is_prefix(std::string_view str, std::string_view of) {
+        if (str.size() > of.size()) return false;
+        return std::equal(str.begin(), str.end(), of.begin());
+    }
+
+    void print_help(const std::vector<std::string>& args) {
+        if (args.size() == 1) {
+            std::cerr << R"(Available commands:
+    breakpoint  - Commands for operating on breakpoints
+    continue    - Resume the process
+    register    - Commands for operating on registers
+    step        - Step over a single instruction
+)";
+        }
+
+        else if (is_prefix(args[1], "register")) {
+            std::cerr << R"(Available commands:
+    read
+    read <register>
+    read all
+    write <register> <value>
+)";
+        }
+        else if (is_prefix(args[1], "breakpoint")) {
+            std::cerr << R"(Available commands:
+    list
+    delete <id>
+    disable <id>
+    enable <id>
+    set <address>
+)";
+        }
+        else {
+            std::cerr << "No help available on that\n";
+        }
+    }
+
+    void handle_breakpoint_command(sdb::process& process,
+        const std::vector<std::string>& args){
+            if(args.size() < 2) {
+                print_help({"help","breakpoint"});
+                return;
+            }
+            auto command = args[1];
+
+            if(is_prefix(command,"list")) {
+                if(process.breakpoint_sites().empty()){
+                    fmt::print("No breakpoints set\n");
+                }
+                else {
+                    fmt::print("Current breakpoints:\n");
+                    process.breakpoint_sites().for_each([](auto& site) {
+                        fmt::print("{}: address = {:#x}, {}\n",
+                            site.id(), site.address().addr(),
+                            site.is_enabled() ? "enabled" : "disabled");
+                    });
+                }
+                return;
+            }
+
+            if(args.size() < 3){
+                print_help({"help", "breakpoint" });
+                return; 
+            }
+
+            if(is_prefix(command, "set")) {
+                auto address = sdb::to_integral<std::uint64_t>(args[2], 16);
+                if(!address){
+                    fmt::print(stderr,
+                        "Breakpoint command expects address in "
+                        "hexadecimal, prefixed with '0x'\n");
+                    return;
+                }
+                process.create_breakpoint_site(sdb::virt_addr{*address}).enable();
+                return;
+            }
+
+            auto id = sdb::to_integral<sdb::breakpoint_site::id_type>(args[2]);
+            if(!id) {
+                std::cerr << "Command expects breakpoint id";
+                return;
+            }
+
+            if(is_prefix(command, "enable")) {
+                process.breakpoint_sites().get_by_id(*id).enable();
+            }
+            else if(is_prefix(command, "disable")) {
+                process.breakpoint_sites().get_by_id(*id).enable();
+            }
+            else if(is_prefix(command, "remove")) {
+                process.breakpoint_sites().remove_by_id(*id);
+            }
+    }
+
     std::unique_ptr<sdb::process> attach(int argc, const char** argv) {
         // Passing PID
         if (argc == 3 && argv[1] == std::string_view("-p")) {
@@ -25,7 +122,9 @@ namespace {
         // Passing program name
         else {
             const char* program_path = argv[1];
-            return sdb::process::launch(program_path);
+            auto proc = sdb::process::launch(program_path);
+            fmt::print("Launched process with PID {}\n", proc->pid());
+            return proc;
         }
     }
 
@@ -39,11 +138,6 @@ namespace {
         }
 
         return out;
-    }
-
-    bool is_prefix(std::string_view str, std::string_view of) {
-        if (str.size() > of.size()) return false;
-        return std::equal(str.begin(), str.end(), of.begin());
     }
 
     void resume(pid_t pid) {
@@ -98,26 +192,6 @@ namespace {
         fmt::print("Process {} {}\n", process.pid(), message);
     }
 
-    void print_help(const std::vector<std::string>& args) {
-        if (args.size() == 1) {
-            std::cerr << R"(Available commands:
-    continue    - Resume the process
-    register    - Commands for operating on registers
-)";
-        }
-
-        else if (is_prefix(args[1], "register")) {
-            std::cerr << R"(Available commands:
-    read
-    read <register>
-    read all
-    write <register> <value>
-)";
-        }
-        else {
-            std::cerr << "No help available on that\n";
-        }
-    }
 
     void handle_register_read(
         sdb::process& process,
@@ -248,6 +322,13 @@ namespace {
         else if (is_prefix(command, "help")) {
             print_help(args);
         }
+        else if (is_prefix(command, "breakpoint")) {
+            handle_breakpoint_command(*process, args);
+        }
+        else if (is_prefix(command, "step")) {
+            auto reason = process->step_instruction();
+            print_stop_reason(*process, reason);
+        }
         else {
             std::cerr << "Unknown command\n";
         }
@@ -257,6 +338,7 @@ namespace {
 
     void main_loop(std::unique_ptr<sdb::process>& process) {
         char* line = nullptr;
+        // readline 会先输出一个"sdb> "然后等待用户输入，进行读取操作，读取的不占有"sdb> "这个
         while ((line = readline("sdb> ")) != nullptr) {
             std::string line_str;
 
