@@ -5,6 +5,8 @@
 #include <libsdb/error.hpp>
 #include <libsdb/pipe.hpp>
 #include <sys/personality.h>
+#include <sys/uio.h>
+#include <libsdb/bit.hpp>
 
 namespace {
     void exit_with_perror(
@@ -148,7 +150,7 @@ sdb::stop_reason sdb::process::wait_on_signal() {
     //则调用 read_all_registers 函数读取目标进程的所有寄存器信息。
     if (is_attached_ and state_ == process_state::stopped) {
         read_all_registers();
-        auto instr_begin = get_pc() - 1;
+        auto instr_begin = get_pc() - (std::int64_t)1;
         if (reason.info == SIGTRAP and
             breakpoint_sites_.enabled_stoppoint_at_address(instr_begin)) {
             set_pc(instr_begin);
@@ -224,3 +226,60 @@ sdb::stop_reason sdb::process::step_instruction() {
     }
     return reason;
 }
+
+std::vector<std::byte> sdb::process::read_memory(virt_addr address, std::size_t amount) const{
+    std::vector<std::byte> ret(amount);
+
+    iovec local_desc{ret.data(), ret.size()};
+
+    std::vector<iovec> remote_descs;
+    while (amount > 0){
+        // 内存被分成一个个固定大小的页 常见的页大小是 0x1000（即 4 KB):
+        auto up_to_next_page = 0x1000 - (address.addr() & 0xfff);
+        auto chunk_size = std::min(amount, up_to_next_page);
+        remote_descs.push_back({ reinterpret_cast<void*>(address.addr()), chunk_size });
+        amount -= chunk_size;
+        address += chunk_size;
+    }
+    if(process_vm_readv(pid_, &local_desc, /*liovcnt=*/1, 
+        remote_descs.data(), /*riovcnt=*/remote_descs.size(), /*flags=*/0) < 0) {
+        error::send_errno("Could not read process memory");
+    }
+    return ret;
+}
+
+      
+
+void sdb::process::write_memory(virt_addr address, span<const std::byte> data){
+    std::size_t written = 0;
+    while (written < data.size()){
+        auto remaining = data.size() - written;
+        std::uint64_t word;
+        if (remaining >= 8){
+            word = from_bytes<std::uint64_t>(data.begin() + written);
+        } else {
+            auto read = read_memory(address + (std::int64_t)written, 8);
+            auto word_data = reinterpret_cast<char*>(&word);
+            std::memcpy(word_data, data.begin() + written, remaining);
+            // 这个是吧八个字节后面的几位补上了
+            std::memcpy(word_data + remaining, read.data() + remaining, 8 - remaining);
+        }
+        if(ptrace(PTRACE_POKEDATA, pid_, address + (std::int64_t)written, word) < 0) {
+            error::send_errno("Could not write process memory");
+        }
+        written += 8;
+    }
+}
+
+std::vector<std::byte> sdb::process::read_memory_without_traps(
+	virt_addr address, std::size_t amount) const {
+	auto memory = read_memory(address, amount);
+	auto sites = breakpoint_sites_.get_in_region(
+		address, address + amount);
+	for (auto site : sites) {
+		if (!site->is_enabled()) continue;
+		auto offset = site->address() - address.addr();
+		memory[offset.addr()] = site->saved_data_;
+	}
+	return memory;
+}  

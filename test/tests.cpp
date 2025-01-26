@@ -29,6 +29,7 @@ namespace {
         return data[index_of_status_indicator];
     }
 
+    //  ELF 文件中某个段（section）的 加载偏移量（load bias)
     std::int64_t get_section_load_bias(
         std::filesystem::path path, Elf64_Addr file_addr) {
         auto command = std::string("readelf -WS ") + path.string();
@@ -57,6 +58,7 @@ namespace {
         sdb::error::send("Couldn't find section load bias");
     }
 
+    //计算 ELF 文件中入口点的 文件偏移量
     std::int64_t get_entry_point_offset(std::filesystem::path path) {
         std::ifstream elf_file(path);
 
@@ -66,7 +68,8 @@ namespace {
         auto entry_file_address = header.e_entry;
         return entry_file_address - get_section_load_bias(path, entry_file_address);
     }   
-
+    
+    //根据进程的 /proc/<pid>/maps 文件，计算程序的可执行段在内存中的 加载地址（load address）
     virt_addr get_load_address (pid_t pid, std::int64_t offset) {
         std::ifstream maps("/proc/" + std::to_string(pid) + "/maps");
         std::regex map_regex(R"((\w+)-\w+ ..(.). (\w+))");
@@ -345,4 +348,29 @@ TEST_CASE("Can remove breakpoint sites", "[breakpoint]") {
     proc->breakpoint_sites().remove_by_id(site.id());
     proc->breakpoint_sites().remove_by_address(virt_addr{ 43 });
     REQUIRE(proc->breakpoint_sites().empty());
+}
+
+TEST_CASE("Reading and writing memory works", "[memory]") {
+    bool close_on_exec = false;
+    sdb::pipe channel(close_on_exec);
+
+    auto proc = process::launch(
+        "test/targets/memory", true, channel.get_write());
+    proc->resume();
+    proc->wait_on_signal();
+
+    auto a_pointer = from_bytes<std::uint64_t>(channel.read().data());
+    auto data_vec = proc->read_memory(virt_addr{a_pointer}, 8);
+    auto data = from_bytes<std::uint64_t>(data_vec.data());
+    REQUIRE(data == 0xcafecafe);
+
+    proc->resume();
+    proc->wait_on_signal();
+    auto b_pointer = from_bytes<std::uint64_t>(channel.read().data());
+    proc->write_memory(virt_addr{b_pointer}, {as_bytes("Hello, sdb!"), 12 });
+    proc->resume();
+    proc->wait_on_signal();
+
+    auto read = channel.read();
+    REQUIRE(to_string_view(read) == "Hello, sdb!");
 }

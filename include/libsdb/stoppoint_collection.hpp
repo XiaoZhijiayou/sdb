@@ -30,6 +30,9 @@ namespace sdb {
         template <class F>
         void for_each(F f) const;
 
+        std::vector<Stoppoint*> get_in_region(
+            virt_addr start, virt_addr end) const;
+        
 
         std::size_t size() const { return stoppoints_.size(); }
         bool empty() const { return stoppoints_.empty(); }  
@@ -151,6 +154,18 @@ namespace sdb {
         for (const auto& point : stoppoints_) {
             f(*point);
         }
+    }
+
+    template <class Stoppoint>
+    std::vector<Stoppoint*> stoppoint_collection<Stoppoint>::get_in_region(
+        virt_addr low, virt_addr high) const {
+        std::vector<Stoppoint*> ret;
+        for (auto& site : stoppoints_) {
+            if (site->in_range(low, high)) {
+                ret.push_back(&*site);
+            }
+        }
+        return ret;
     }
 
 }

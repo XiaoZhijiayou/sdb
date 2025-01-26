@@ -12,6 +12,7 @@ find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(readline REQUIRED IMPORTED_TARGET readline)
 find_package(fmt CONFIG REQUIRED)
+find_package(zydis CONFIG REQUIRED)
 include(CTest)
 
 # 这行将 src 目录添加到 CMake 构建过程中，
