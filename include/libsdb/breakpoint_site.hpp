@@ -29,9 +29,12 @@ namespace sdb{
         bool in_range(virt_addr low, virt_addr high) const {
             return low <= address_ and high > address_;
         }
+        bool is_hardware() const { return is_hardware_; }
+        bool is_internal() const { return is_internal_; }
     private:
         breakpoint_site(
-            process& proc, virt_addr address);
+            process& proc, virt_addr address,
+            bool is_hardware = false, bool is_internal = false);
         friend process;
     
         id_type id_;
@@ -39,6 +42,9 @@ namespace sdb{
         virt_addr address_;
         bool is_enabled_;
         std::byte saved_data_;
+        bool is_hardware_;
+        bool is_internal_;
+        int hardware_register_index_ = -1;
     };
 }
 

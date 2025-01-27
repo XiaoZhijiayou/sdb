@@ -45,15 +45,12 @@ sdb::process::launch(std::filesystem::path path){
     Could not write to user area: Input/output error
 ```
 
-第八章的错误
-```
-[19/21] : && /usr/bin/c++  -Wl,--dependency-file=tools/CMakeFiles/sdb.dir/link.d tools/CMakeFiles/sdb.dir/sdb.cpp.o -o tools/sdb  src/libsdb.a  vcpkg_installed/x64-linux/debug/lib/libfmtd.a  vcpkg_installed/x64-linux/debug/lib/libreadline.a  /usr/lib/libncursesw.so && :
-FAILED: tools/sdb 
-: && /usr/bin/c++  -Wl,--dependency-file=tools/CMakeFiles/sdb.dir/link.d tools/CMakeFiles/sdb.dir/sdb.cpp.o -o tools/sdb  src/libsdb.a  vcpkg_installed/x64-linux/debug/lib/libfmtd.a  vcpkg_installed/x64-linux/debug/lib/libreadline.a  /usr/lib/libncursesw.so && :
-/usr/bin/ld: tools/CMakeFiles/sdb.dir/sdb.cpp.o: in function `(anonymous namespace)::print_disassembly(sdb::process&, sdb::virt_addr, unsigned long)':
-sdb.cpp:(.text+0xaf9): undefined reference to `sdb::disassembler::disassemble(unsigned long, std::optional<sdb::virt_addr>)'
-collect2: 错误：ld 返回 1
-[20/21] /usr/bin/c++  -I/home/li/project/sdb/include -isystem /home/li/project/sdb/build/vcpkg_installed/x64-linux/include  -MD -MT test/CMakeFiles/tests.dir/tests.cpp.o -MF test/CMakeFiles/tests.dir/tests.cpp.o.d -o test/CMakeFiles/tests.dir/tests.cpp.o -c /home/li/project/sdb/test/tests.cpp
-ninja: build stopped: subcommand failed.
-```
+#### 硬件调试寄存器部分
 
+- ![alt text](image-1.png)
+- dr7的每个位置说明
+- ![alt text](image-2.png)
+- 寄存器的类型
+- ![alt text](image-3.png)
+
+其中从左往右看，例如dr0调试寄存器来说，如果0-1为0b11的话表示dr0已经被使用，只要这两个位置里面有一个1就算在工作

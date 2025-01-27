@@ -84,6 +84,7 @@ sdb::process::attach(pid_t pid) {
     return proc;
 }
 
+// 检查子进程是否是附加进程，是否需要在调试器终止的时候终止子进程
 sdb::process::~process() {
     if (pid_ != 0) {
         int status;
@@ -102,12 +103,14 @@ sdb::process::~process() {
         }
     }
 }
-// 禁用断点 - 单步执行 - 重新启用断点 - 继续执行
+
+// 禁用断点 - 单步执行 - 重新启用断点 - 继续执行  这个其实就是从当前断点继续执行到下一个断点
 void sdb::process::resume() {
     auto pc = get_pc();
     if (breakpoint_sites_.enabled_stoppoint_at_address(pc)){
         auto& bp = breakpoint_sites_.get_by_address(pc);
         bp.disable();
+        //单步命令
         if(ptrace(PTRACE_SINGLESTEP, pid_, nullptr, nullptr) < 0) {
             error::send_errno("Failed to single step");
         }
@@ -138,6 +141,7 @@ sdb::stop_reason::stop_reason(int wait_status) {
     }
 }
 
+//等待关联进程收到信号，并根据信号处理结果更新进程状态，同时在特定条件下读取进程的寄存器信息以及调整程序计数器（PC）的值
 sdb::stop_reason sdb::process::wait_on_signal() {
     int wait_status;
     int options = 0;
@@ -160,6 +164,7 @@ sdb::stop_reason sdb::process::wait_on_signal() {
     return reason;
 }
 
+// 读取所有寄存器
 void sdb::process::read_all_registers() {
     if (ptrace(PTRACE_GETREGS, pid_, nullptr, &get_registers().data_.regs) < 0) {
         error::send_errno("Could not read GPR registers");
@@ -199,15 +204,16 @@ void sdb::process::write_gprs(const user_regs_struct& gprs) {
 
 
 sdb::breakpoint_site& 
-sdb::process::create_breakpoint_site(virt_addr address)
+sdb::process::create_breakpoint_site(virt_addr address, bool hardware, bool internal)
 {
     if(breakpoint_sites_.contains_address(address)) {
         error::send("Breakpoint site already created at address " +
             std::to_string(address.addr()));
     }
-    return breakpoint_sites_.push(std::unique_ptr<breakpoint_site>(new breakpoint_site(*this, address)));
+    return breakpoint_sites_.push(std::unique_ptr<breakpoint_site>(new breakpoint_site(*this, address, hardware, internal)));
 }
 
+// 这个单步的过程就是先将当前的断电保存下来之后，然后去掉断点然后继续执行
 sdb::stop_reason sdb::process::step_instruction() {
     std::optional<breakpoint_site*> to_reenable;
     auto pc = get_pc();
@@ -227,6 +233,7 @@ sdb::stop_reason sdb::process::step_instruction() {
     return reason;
 }
 
+//从指定进程的虚拟内存地址处读取指定数量的字节数据
 std::vector<std::byte> sdb::process::read_memory(virt_addr address, std::size_t amount) const{
     std::vector<std::byte> ret(amount);
 
@@ -241,6 +248,7 @@ std::vector<std::byte> sdb::process::read_memory(virt_addr address, std::size_t 
         amount -= chunk_size;
         address += chunk_size;
     }
+    //调用 process_vm_readv 系统调用从远程进程（由 pid_ 标识）的内存中读取数据
     if(process_vm_readv(pid_, &local_desc, /*liovcnt=*/1, 
         remote_descs.data(), /*riovcnt=*/remote_descs.size(), /*flags=*/0) < 0) {
         error::send_errno("Could not read process memory");
@@ -249,7 +257,7 @@ std::vector<std::byte> sdb::process::read_memory(virt_addr address, std::size_t 
 }
 
       
-
+//向指定进程的虚拟内存处写入字节
 void sdb::process::write_memory(virt_addr address, span<const std::byte> data){
     std::size_t written = 0;
     while (written < data.size()){
@@ -271,15 +279,101 @@ void sdb::process::write_memory(virt_addr address, span<const std::byte> data){
     }
 }
 
+//从指定进程的虚拟内存地址处读取指定数量的字节数据，并且在读取过程中忽略软件断点的影响，
+//即读取的数据中不会包含因设置软件断点而被修改的指令或数据，恢复其原始状态
 std::vector<std::byte> sdb::process::read_memory_without_traps(
 	virt_addr address, std::size_t amount) const {
 	auto memory = read_memory(address, amount);
 	auto sites = breakpoint_sites_.get_in_region(
 		address, address + amount);
 	for (auto site : sites) {
-		if (!site->is_enabled()) continue;
+		if (!site->is_enabled() or site->is_hardware()) continue;
 		auto offset = site->address() - address.addr();
 		memory[offset.addr()] = site->saved_data_;
 	}
 	return memory;
 }  
+
+int sdb::process::set_hardware_breakpoint(breakpoint_site::id_type id, virt_addr address) {
+    return set_hardware_stoppoint(address, stoppoint_mode::execute, 1);
+}
+
+namespace {
+        std::uint64_t encode_hardware_stoppoint_mode(sdb::stoppoint_mode mode) {
+        switch (mode) {
+            case sdb::stoppoint_mode::write: return 0b01;
+            case sdb::stoppoint_mode::read_write: return 0b11;
+            case sdb::stoppoint_mode::execute: return 0b00;
+            default: sdb::error::send("invalid stoppoint mode");
+        }
+    }
+
+    std::uint64_t encode_hardware_stoppoint_size(std::size_t size) {
+        switch (size) {
+            case 1: return 0b00;
+            case 2: return 0b01;
+            case 4: return 0b11;
+            case 8: return 0b10;
+            default: sdb::error::send("invalid stoppoint size");
+        }
+    }
+
+    int find_free_stoppoint_register(std::uint64_t control_register) {
+        for (auto i = 0; i < 4; ++i) {
+            if((control_register & (0b11 << (i * 2))) == 0) {
+                return i;
+            }
+        }
+        sdb::error::send("No remaining hardware debug registers");
+    }
+}
+
+int sdb::process::set_hardware_stoppoint(
+    virt_addr address, stoppoint_mode mode, std::size_t size) {
+    auto& regs = get_registers();
+    auto control = regs.read_by_id_as<std::uint64_t>(register_id::dr7);
+    // 找到一个空闲的debugger寄存器
+    int free_space = find_free_stoppoint_register(control);
+    //调试寄存器的 ID 是连续排列的；DR1 的 ID 紧接着 DR0 的 ID，以此类推。可以计算出来正确的寄存器id
+    //这个相当于是0b000000000000000000001形式31个零
+    auto id = static_cast<int>(register_id::dr0) + free_space;
+    regs.write_by_id(static_cast<register_id>(id), address.addr());
+    //这个是设置模式部分
+    auto mode_flag = encode_hardware_stoppoint_mode(mode);
+    auto size_flag = encode_hardware_stoppoint_size(size);
+    auto enable_bit = (1 << (free_space * 2));
+    auto mode_bits = (mode_flag << (free_space * 4 + 16));
+    auto size_bits = (size_flag << (free_space * 4 + 18));
+    //这个掩码部分是为了将现在的寄存器的控制状态保存下来，然后继续添加其他寄存器信息
+    //需要将其他寄存器的信息部分去掉过去保存在masked
+    auto clear_mask = (0b11 << (free_space * 2)) |
+                    (0b1111 << (free_space * 4 + 16));
+    auto masked = control & ~clear_mask;
+    masked |= enable_bit | mode_bits | size_bits;
+    regs.write_by_id(register_id::dr7, masked);
+    return free_space;
+}
+
+void sdb::process::clear_hardware_stoppoint(int index){
+    auto id = static_cast<int>(register_id::dr0) + index;
+    get_registers().write_by_id(static_cast<register_id>(id), 0);
+    auto control =  get_registers().read_by_id_as<std::uint64_t>(register_id::dr7);
+    auto clear_mask = (0b11 << (index * 2))
+                    | (0b1111 << (index * 4 + 16));
+    auto masked = control & ~clear_mask;
+    get_registers().write_by_id(register_id::dr7, masked);
+}
+
+int sdb::process::set_watchpoint(
+    watchpoint::id_type id, virt_addr address,
+    stoppoint_mode mode, std::size_t size){  
+    return set_hardware_stoppoint(address,mode,size);
+}
+
+sdb::watchpoint& sdb::process::create_watchpoint(virt_addr address, stoppoint_mode mode, std::size_t size){
+    if(watchpoints_.contains_address(address)){
+        error::send("Watchpoint already created at address " +
+            std::to_string(address.addr()));
+    }
+    return watchpoints_.push(std::unique_ptr<watchpoint>(new watchpoint(*this, address, mode,size)));
+}
