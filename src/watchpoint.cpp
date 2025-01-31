@@ -1,6 +1,7 @@
 #include <libsdb/watchpoint.hpp>
 #include <libsdb/process.hpp>
 #include <libsdb/error.hpp>
+#include <utility>
 
 namespace {
     auto get_next_id(){
@@ -28,4 +29,12 @@ sdb::watchpoint::watchpoint(process& proc, virt_addr address,stoppoint_mode mode
         error::send("Watchpoint must be aligned to size");
     }
     id_ = get_next_id();
+    updata_data();
+}
+
+void sdb::watchpoint::updata_data() {
+    std::uint64_t new_data = 0;
+    auto read = process_->read_memory(address_,size_);
+    memcpy(&new_data ,read.data(), size_); 
+    previous_data_ = std::exchange(data_, new_data);
 }

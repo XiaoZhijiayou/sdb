@@ -18,7 +18,10 @@ namespace sdb{
         id_type id() const {return id_;}
 
         void enable();
+
         void disable();
+
+        void updata_data();
 
         bool is_enabled() const {return is_enabled_;}
         virt_addr address() const {return address_;}
@@ -33,6 +36,9 @@ namespace sdb{
             return low <= address_ and high > address_;
         }
 
+        std::uint64_t data() const { return data_;}
+
+        std::uint64_t previous_data() const { return previous_data_;}
     private:
         friend process;
         watchpoint(
@@ -46,6 +52,8 @@ namespace sdb{
         std::size_t size_;
         bool is_enabled_;
         int hardware_register_index_ = -1; 
+        std::uint64_t data_ = 0;
+        std::uint64_t previous_data_ = 0;
     };
 }
 
